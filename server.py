@@ -1,11 +1,13 @@
 # server.py (Optimized for Public/Enterprise Use)
 import os
 import logging
-from typing import Optional, Any
+from typing import Optional, Any, Dict
 from datetime import datetime, timezone
 
 # FastMCP Framework
 from fastmcp import FastMCP, Context
+from fastmcp.tools.tool import Tool, ToolResult
+from fastmcp.server.dependencies import get_context
 from fastmcp.server.auth.providers.google import GoogleProvider
 from fastmcp.exceptions import ToolError
 
@@ -53,7 +55,6 @@ secure_store = RedisStore(
     host=REDIS_HOST,
     port=REDIS_PORT,
     db=REDIS_DB,
-    # expiration=2592000  # Removed: Not supported by RedisStore.__init__
 )
 
 # --- Authentication Provider Setup ---
@@ -132,86 +133,103 @@ async def get_calendar_service(ctx: Context) -> Any:
         raise ToolError(f"System Authorization Failure: {str(e)}")
 
 
-@mcp.tool()
-async def list_events(
-    ctx: Context,
-    max_results: int = 10,
-    time_min: Optional[str] = None
-) -> str:
-    """
-    Lists upcoming events from the user's primary calendar.
-
-    Args:
-        max_results: Maximum number of events to return. Defaults to 10.
-        time_min: Start time in ISO format (YYYY-MM-DDTHH:MM:SSZ). Defaults to now.
-    """
-    service = await get_calendar_service(ctx)
-
-    # Use timezone-aware UTC now
-    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    t_min = time_min if time_min else now
-
-    try:
-        logger.info(f"Fetching events for session {ctx.session_id}")
-        events_result = service.events().list(
-            calendarId='primary',
-            timeMin=t_min,
-            maxResults=max_results,
-            singleEvents=True,
-            orderBy='startTime'
-        ).execute()
-
-        events = events_result.get('items',)
-
-        if not events:
-            return "No upcoming events found."
-
-        result_lines = ["Upcoming events:"]
-        for event in events:
-            start = event['start'].get('dateTime', event['start'].get('date'))
-            result_lines.append(
-                f"- {start}: {event.get('summary', 'No Title')}")
-
-        return "\n".join(result_lines)
-
-    except Exception as e:
-        logger.error(f"API Error in list_events: {e}")
-        raise ToolError(f"Google Calendar API Error: {str(e)}")
-
-
-@mcp.tool()
-async def create_event(
-    ctx: Context,
-    summary: str,
-    start_time: str,
-    end_time: str,
-    description: str = "",
-) -> str:
-    """
-    Creates a new event in the primary calendar.
-
-    Args:
-        summary: The title of the event.
-        start_time: Start time in ISO 8601 format (e.g., 2024-12-31T10:00:00Z).
-        end_time: End time in ISO 8601 format.
-        description: Description/body of the event.
-    """
-    service = await get_calendar_service(ctx)
-
-    event_body = {
-        'summary': summary,
-        'description': description,
-        'start': {'dateTime': start_time, 'timeZone': 'UTC'},
-        'end': {'dateTime': end_time, 'timeZone': 'UTC'},
+class ListUpcomingEvents(Tool):
+    name: str = "list_upcoming_events"
+    description: str = "List upcoming events from the primary calendar."
+    parameters: Dict[str, Any] = {
+        "type": "object",
+        "description": "Get upcoming calendar events",
+        "properties": {
+            "max_results": {"type": "integer", "description": "Max events to return. Default 10."},
+            "time_min": {"type": "string", "description": "Start time in ISO format (YYYY-MM-DDTHH:MM:SSZ). Defaults to now."}
+        },
+        "additionalProperties": True
     }
 
-    try:
-        event = service.events().insert(calendarId='primary', body=event_body).execute()
-        return f"Event created successfully. Link: {event.get('htmlLink')}"
-    except Exception as e:
-        logger.error(
-            f"Failed to create event for session {ctx.session_id}: {e}")
-        raise ToolError(f"Failed to create event: {str(e)}")
+    async def run(self, arguments: Dict[str, Any]) -> ToolResult:
+        max_results = arguments.get('max_results', 10)
+        time_min = arguments.get('time_min')
+
+        try:
+            ctx = get_context()
+            service = await get_calendar_service(ctx)
+
+            # Use timezone-aware UTC now
+            now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            t_min = time_min if time_min else now
+
+            logger.info(f"Fetching events for session {ctx.session_id}")
+            events_result = service.events().list(
+                calendarId='primary',
+                timeMin=t_min,
+                maxResults=max_results,
+                singleEvents=True,
+                orderBy='startTime'
+            ).execute()
+
+            events = events_result.get('items', [])
+
+            if not events:
+                return ToolResult(content=[{"type": "text", "text": "No upcoming events found."}])
+
+            result_lines = ["Upcoming events:"]
+            for event in events:
+                start = event['start'].get(
+                    'dateTime', event['start'].get('date'))
+                result_lines.append(
+                    f"- {start}: {event.get('summary', 'No Title')}")
+
+            return ToolResult(content=[{"type": "text", "text": "\n".join(result_lines)}])
+
+        except Exception as e:
+            logger.error(f"API Error in list_events: {e}")
+            return ToolResult(content=[{"type": "text", "text": f"Google Calendar API Error: {str(e)}"}])
+
+
+class CreateEvent(Tool):
+    name: str = "create_event"
+    description: str = "Create a new event in the primary calendar."
+    parameters: Dict[str, Any] = {
+        "type": "object",
+        "description": "Create a calendar event",
+        "required": ["summary", "start_time", "end_time"],
+        "properties": {
+            "summary": {"type": "string", "description": "The title of the event."},
+            "start_time": {"type": "string", "description": "Start time in ISO 8601 format (e.g., 2024-12-31T10:00:00Z)."},
+            "end_time": {"type": "string", "description": "End time in ISO 8601 format."},
+            "description": {"type": "string", "description": "Description/body of the event.", "default": ""}
+        },
+        "additionalProperties": True
+    }
+
+    async def run(self, arguments: Dict[str, Any]) -> ToolResult:
+        summary = arguments.get('summary')
+        start_time = arguments.get('start_time')
+        end_time = arguments.get('end_time')
+        description = arguments.get('description', "")
+
+        try:
+            ctx = get_context()
+            service = await get_calendar_service(ctx)
+
+            event_body = {
+                'summary': summary,
+                'description': description,
+                'start': {'dateTime': start_time, 'timeZone': 'UTC'},
+                'end': {'dateTime': end_time, 'timeZone': 'UTC'},
+            }
+
+            event = service.events().insert(calendarId='primary', body=event_body).execute()
+            return ToolResult(content=[{"type": "text", "text": f"Event created successfully. Link: {event.get('htmlLink')}"}])
+        except Exception as e:
+            logger.error(
+                f"Failed to create event for session {ctx.session_id}: {e}")
+            return ToolResult(content=[{"type": "text", "text": f"Failed to create event: {str(e)}"}])
+
+
+# Add tools to server
+mcp.add_tool(ListUpcomingEvents())
+mcp.add_tool(CreateEvent())
 
 if __name__ == "__main__":
     logger.info(f"Starting Google Calendar MCP Server on {HOST}:{PORT}...")
