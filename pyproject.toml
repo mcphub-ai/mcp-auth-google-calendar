@@ -1,0 +1,23 @@
+[project]
+name = "mcp-auth-google-calendar"
+version = "0.1.0"
+description = "Production-grade Google Calendar MCP Server with persistent OAuth."
+requires-python = ">=3.12"
+dependencies = [
+    "fastmcp[server]>=2.13.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-api-python-client>=2.111.0",
+    "cryptography>=42.0.0",
+    "python-dotenv>=1.0.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.6.0",
+    "redis>=5.0.0",
+    "openai>=2.15.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.26.0" ,
+    "autopep8>=2.0.0",
+]
