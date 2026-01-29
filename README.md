@@ -61,23 +61,7 @@ This project manages dependencies using `uv` (recommended) or you can use `pip`.
 
 2.  Edit `.env` and fill in your credentials:
 
-    ```ini
-    # Google OAuth Credentials
-    GOOGLE_CLIENT_ID=your_client_id_here
-    GOOGLE_CLIENT_SECRET=your_client_secret_here
-    
-    # Server URLs
-    SERVER_URL=http://localhost:8000
-    MCP_SERVER_URL=http://localhost:8000/sse
-
-    # Redis (Defaults provided, change if needed)
-    REDIS_HOST=localhost
-    REDIS_PORT=6379
-    REDIS_DB=0
-
-    # OpenAI API Key (For running client.py)
-    OPENAI_API_KEY=sk-your-openai-key
-    ```
+Please refer .env.example
 
 ## Docker Support
 
@@ -116,6 +100,8 @@ You can also use profiles to maintain separate authentication sessions:
 ```bash
 uv run client.py --profile work
 uv run client.py --profile personal
+uv run client.py --profile user1
+uv run client.py --profile user2
 ```
 
 ## Connecting a Client
@@ -144,7 +130,7 @@ You can configure Claude Desktop to use this MCP server.
       "mcpServers": {
         "google-calendar": {
           "command": "uv",
-          "args": ["run", "--directory", "C:/path/to/repo/mcp-auth-gg-calendar", "server.py"],
+          "args": ["run", "--directory", "C:/path/to/repo/mcp-auth-google-calendar", "server.py"],
           "env": {
              "GOOGLE_CLIENT_ID": "your_client_id",
              "GOOGLE_CLIENT_SECRET": "your_client_secret"
